@@ -1,12 +1,19 @@
 type IntSet
     bits::Array{Uint32,1}
+    spacelimit::Int
     limit::Int
     fill1s::Bool
 
-    IntSet() = new(zeros(Uint32,256>>>5), 256, false)
+    function IntSet(;lim::Int=256)
+        #println("makin an intset")
+        #println("limit is $limit")
+        is = new(zeros(Uint32,256>>>5), 256, lim, false)
+        #println("made it")
+        is
+    end
 end
 
-IntSet(args...) = (s=IntSet(); for a in args; add!(s,a); end; s)
+IntSet(args...) = (s=IntSet(;lim=0); for a in args; add!(s,a); end; s)
 
 similar(s::IntSet) = IntSet()
 
@@ -15,7 +22,7 @@ copy(s::IntSet) = union!(IntSet(), s)
 eltype(s::IntSet) = Int64
 
 function sizehint(s::IntSet, top::Integer)
-    if top >= s.limit
+    if top >= s.spacelimit
         lim = ((top+31) & -32)>>>5
         olsz = length(s.bits)
         if olsz < lim
@@ -23,13 +30,16 @@ function sizehint(s::IntSet, top::Integer)
             fill = s.fill1s ? uint32(-1) : uint32(0)
             for i=(olsz+1):lim; s.bits[i] = fill; end
         end
-        s.limit = top
+        s.spacelimit = top
     end
     s
 end
 
 function add!(s::IntSet, n::Integer)
-    if n >= s.limit
+    if n > s.limit
+        s.limit = n
+    end
+    if n >= s.spacelimit
         if s.fill1s
             return s
         else
@@ -49,7 +59,10 @@ function union!(s::IntSet, ns)
 end
 
 function delete!(s::IntSet, n::Integer, deflt)
-    if n >= s.limit
+    if n > s.limit
+        s.limit = n
+    end
+    if n >= s.spacelimit
         if s.fill1s
             lim = int(n + div(n,2))
             sizehint(s, lim)
@@ -81,7 +94,7 @@ end
 
 setdiff(a::IntSet, b::IntSet) = setdiff!(copy(a),b)
 symdiff(a::IntSet, b::IntSet) =
-    (s1.limit >= s2.limit ? symdiff!(copy(s1), s2) : symdiff!(copy(s2), s1))
+    (s1.spacelimit >= s2.spacelimit ? symdiff!(copy(s1), s2) : symdiff!(copy(s2), s1))
 
 function empty!(s::IntSet)
     s.bits[:] = 0
@@ -89,7 +102,7 @@ function empty!(s::IntSet)
 end
 
 function symdiff!(s::IntSet, n::Integer)
-    if n >= s.limit
+    if n >= s.spacelimit
         lim = int(n + dim(n,2))
         sizehint(s, lim)
     end
@@ -110,7 +123,7 @@ function copy!(to::IntSet, from::IntSet)
 end
 
 function contains(s::IntSet, n::Integer)
-    if n >= s.limit
+    if n >= s.spacelimit
         # max IntSet length is typemax(Int), so highest possible element is
         # typemax(Int)-1
         s.fill1s && n >= 0 && n < typemax(Int)
@@ -120,22 +133,22 @@ function contains(s::IntSet, n::Integer)
 end
 
 start(s::IntSet) = int64(0)
-done(s::IntSet, i) = (!s.fill1s && next(s,i)[1] >= s.limit) || i == typemax(Int)
+done(s::IntSet, i) = (i >= s.limit) # || (!s.fill1s && next(s,i)[1] >= s.spacelimit) || i >= typemax(Int)
 function next(s::IntSet, i)
-    if i >= s.limit
+    if i >= s.spacelimit
         n = int64(i)
     else
-        n = int64(ccall(:bitvector_next, Uint64, (Ptr{Uint32}, Uint64, Uint64), s.bits, i, s.limit))
+        n = int64(ccall(:bitvector_next, Uint64, (Ptr{Uint32}, Uint64, Uint64), s.bits, i, s.spacelimit))
     end
     (n, n+1)
 end
 
 isempty(s::IntSet) =
-    !s.fill1s && ccall(:bitvector_any1, Uint32, (Ptr{Uint32}, Uint64, Uint64), s.bits, 0, s.limit)==0
+    !s.fill1s && ccall(:bitvector_any1, Uint32, (Ptr{Uint32}, Uint64, Uint64), s.bits, 0, s.spacelimit)==0
 
 function first(s::IntSet)
     n = next(s,0)[1]
-    if n >= s.limit
+    if n >= s.spacelimit
         error("first: set is empty")
     end
     return n
@@ -157,14 +170,14 @@ end
 
 pop!(s::IntSet) = delete!(s, last(s))
 
-length(s::IntSet) = int(ccall(:bitvector_count, Uint64, (Ptr{Uint32}, Uint64, Uint64), s.bits, 0, s.limit)) +
-    (s.fill1s ? typemax(Int) - s.limit : 0)
+length(s::IntSet) = int(ccall(:bitvector_count, Uint64, (Ptr{Uint32}, Uint64, Uint64), s.bits, 0, s.spacelimit)) +
+    (s.fill1s ? typemax(Int) - s.spacelimit : 0)
 
 function show(io::IO, s::IntSet)
     print(io, "IntSet(")
     first = true
     for n in s
-        if n > s.limit
+        if n > s.spacelimit
             break
         end
         if !first
@@ -183,8 +196,8 @@ end
 
 # Math functions
 function union!(s::IntSet, s2::IntSet)
-    if s2.limit > s.limit
-        sizehint(s, s2.limit)
+    if s2.spacelimit > s.spacelimit
+        sizehint(s, s2.spacelimit)
     end
     lim = length(s2.bits)
     for n = 1:lim
@@ -200,12 +213,12 @@ function union!(s::IntSet, s2::IntSet)
 end
 
 union(s1::IntSet) = copy(s1)
-union(s1::IntSet, s2::IntSet) = (s1.limit >= s2.limit ? union!(copy(s1), s2) : union!(copy(s2), s1))
+union(s1::IntSet, s2::IntSet) = (s1.spacelimit >= s2.spacelimit ? union!(copy(s1), s2) : union!(copy(s2), s1))
 union(s1::IntSet, ss::IntSet...) = union(s1, union(ss...))
 
 function intersect!(s::IntSet, s2::IntSet)
-    if s2.limit > s.limit
-        sizehint(s, s2.limit)
+    if s2.spacelimit > s.spacelimit
+        sizehint(s, s2.spacelimit)
     end
     lim = length(s2.bits)
     for n = 1:lim
@@ -222,7 +235,7 @@ end
 
 intersect(s1::IntSet) = copy(s1)
 intersect(s1::IntSet, s2::IntSet) =
-    (s1.limit >= s2.limit ? intersect!(copy(s1), s2) : intersect!(copy(s2), s1))
+    (s1.spacelimit >= s2.spacelimit ? intersect!(copy(s1), s2) : intersect!(copy(s2), s1))
 intersect(s1::IntSet, ss::IntSet...) = intersect(s1, intersect(ss...))
 
 function complement!(s::IntSet)
@@ -236,8 +249,8 @@ end
 complement(s::IntSet) = complement!(copy(s))
 
 function symdiff!(s::IntSet, s2::IntSet)
-    if s2.limit > s.limit
-        sizehint(s, s2.limit)
+    if s2.spacelimit > s.spacelimit
+        sizehint(s, s2.spacelimit)
     end
     lim = length(s2.bits)
     for n = 1:lim

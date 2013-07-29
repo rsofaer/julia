@@ -1,3 +1,4 @@
+include("testdefs.jl")
 # dict
 h = Dict()
 for i=1:10000
@@ -361,22 +362,34 @@ end
 @test !isequal(Set{Int}(1,2,3,4), Set{Any}(1,2,3))
 
 # ########## end of set tests ##########
+IntSet
+## 
 
-## IntSet
+let s = IntSet(0,1,10,20,200,300,1000,10000,10002)
+    @test last(s) == 10002
+    @test first(s) == 0
+    @test length(s) == 9
+    @test pop!(s) == 10002
+    @test length(s) == 8
+    @test shift!(s) == 0
+    @test length(s) == 7
+    @test !contains(s,0)
+    @test !contains(s,10002)
+    @test contains(s,10000)
+    @test_throws first(IntSet())
+    @test_throws last(IntSet())
 
-s = IntSet(0,1,10,20,200,300,1000,10000,10002)
-@test last(s) == 10002
-@test first(s) == 0
-@test length(s) == 9
-@test pop!(s) == 10002
-@test length(s) == 8
-@test shift!(s) == 0
-@test length(s) == 7
-@test !contains(s,0)
-@test !contains(s,10002)
-@test contains(s,10000)
-@test_throws first(IntSet())
-@test_throws last(IntSet())
+    col = collect(s)
+    @test col == [1,10,20,200,300,1000,10000]
+    @test max(complement(s)) == max(col) - 1
+end
+
+let s = IntSet(1,2,5, 7, 10, 12, 16)
+    @test complement(s) == IntSet(0,3,4,6,7,8,9, 11, 13, 14, 15)
+    @test last(complmenent(s)) == 15
+    @test first(complement(s)) == 0
+    @test collect(complement(s)) == [0,3,4,6,7,8,9, 11, 13, 14, 15]
+end
 
 # Ranges
 
